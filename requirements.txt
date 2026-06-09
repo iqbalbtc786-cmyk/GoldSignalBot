@@ -1,0 +1,7 @@
+pandas>=1.5
+numpy
+yfinance
+requests
+python-dateutil
+pytz
+schedule
