@@ -341,7 +341,7 @@ class GoldSignalBot:
             data_1h = self.fetch_data(self.symbol, '1h', '30d')
             data_4h = self.fetch_data(self.symbol, '4h', '90d')
             
-            if not data_1h or not data_4h:
+            if data_1h is None or data_4h is None:
                 logger.warning('Insufficient data for analysis')
                 return
             
