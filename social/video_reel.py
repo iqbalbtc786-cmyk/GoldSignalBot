@@ -6,6 +6,7 @@ The reel reuses the same visual language as the static image card
 (social/image_card.py) but reveals the hook, badge, confidence bar and
 price levels in sequence so it plays like a fast, punchy trade recap —
 the format that performs best as an Instagram/TikTok/YouTube Short.
+Language follows `config.SOCIAL_LANGUAGE` the same way image_card does.
 """
 import logging
 import os
@@ -13,12 +14,14 @@ import os
 import numpy as np
 from PIL import Image, ImageDraw
 
-from social import config
+from social import config, i18n
 from social.fonts import bold, regular
 from social.image_card import (
     _add_candlestick_texture,
     _direction_color,
     _draw_centered_text,
+    _draw_paragraph,
+    _fonts_for,
     _hex,
     _strip_emoji,
     _vertical_gradient,
@@ -85,6 +88,8 @@ def _base_static_layer(signal, size=SIZE):
     brand row + footer disclaimer: identical on every frame, so it is
     rendered once and copied per-frame instead of redrawn."""
     w, h = size
+    lang = config.SOCIAL_LANGUAGE
+    _, font_regular = _fonts_for(lang)
     bg_top = _hex(config.PRIMARY_COLOR)
     bg_bottom = tuple(min(255, c + 18) for c in bg_top)
     img = _vertical_gradient(size, bg_top, bg_bottom)
@@ -102,8 +107,8 @@ def _base_static_layer(signal, size=SIZE):
     handle_w = draw.textlength(config.BRAND_HANDLE, font=handle_font)
     draw.text((w - pad - handle_w, 48), config.BRAND_HANDLE, font=handle_font, fill=muted)
 
-    footer_font = regular(22)
-    footer_lines = _wrap_text(draw, config.DISCLAIMER, footer_font, w - 2 * pad)
+    footer_font = font_regular(22)
+    footer_lines = _wrap_text(draw, config.DISCLAIMER, footer_font, w - 2 * pad, lang)
     footer_y = h - 50 * len(footer_lines) - 40
     for line in footer_lines:
         _draw_centered_text(draw, line, footer_y, footer_font, muted, w)
@@ -135,6 +140,8 @@ def _paste_faded(base_rgba, draw_fn, alpha, y_offset=0):
 def _render_frame(t, timeline, hook, cta, base_layer):
     signal = timeline.signal
     direction = signal['direction']
+    lang = config.SOCIAL_LANGUAGE
+    font_bold, font_regular = _fonts_for(lang)
     dcolor = _direction_color(direction)
     white = (245, 246, 248)
     muted = (150, 158, 176)
@@ -148,22 +155,18 @@ def _render_frame(t, timeline, hook, cta, base_layer):
     # Hook headline
     hook_p = _ease_out(_progress(t, timeline.hook_start, timeline.hook_fade))
     if hook_p > 0:
-        hook_font = bold(46)
-        lines = _wrap_text(scratch, _strip_emoji(hook), hook_font, w - 2 * pad)[:4]
+        hook_font = font_bold(46)
 
         def draw_hook(d):
-            y = 130
-            for line in lines:
-                d.text((pad, y), line, font=hook_font, fill=white)
-                y += 58
+            _draw_paragraph(d, _strip_emoji(hook), 130, hook_font, white, w, pad, lang, 58)
 
         frame = _paste_faded(frame, draw_hook, int(255 * hook_p), y_offset=(1 - hook_p) * 20)
 
-    # Direction badge
+    # Direction badge (BUY/SELL kept in English — universal trading shorthand)
     badge_p = _ease_out(_progress(t, timeline.badge_start, timeline.badge_fade))
-    badge_text = 'NO TRADE' if direction == 'NEUTRAL' else direction
+    badge_text = i18n.shape(i18n.label('no_trade', lang), lang) if direction == 'NEUTRAL' else direction
     if badge_p > 0:
-        badge_font = bold(64)
+        badge_font = font_bold(64)
         badge_w = scratch.textlength(badge_text, font=badge_font) + 80
         badge_h = 96
         badge_y = 330
@@ -195,8 +198,8 @@ def _render_frame(t, timeline, hook, cta, base_layer):
     # Confidence label + animated bar
     conf_p = _progress(t, timeline.conf_start, timeline.conf_fade)
     if conf_p > 0:
-        conf_font = regular(32)
-        conf_text = f"Confidence: {signal['confidence']}%"
+        conf_font = font_regular(32)
+        conf_text = i18n.shape(i18n.label('confidence', lang, pct=signal['confidence']), lang)
         bar_w, bar_h, bar_x = w - 2 * pad, 18, pad
         bar_y = y_after_price + 46
 
@@ -210,17 +213,17 @@ def _render_frame(t, timeline, hook, cta, base_layer):
 
     y_rows = y_after_price + 46 + 18 + 50
 
-    # Levels rows (staggered reveal)
+    # Levels rows (staggered reveal) — label/value sides mirror for Urdu (RTL)
     if timeline.is_trade:
         t_targets = signal['targets']
         rows = [
-            ('ENTRY', f"${t_targets['entry']:.2f}", gold),
-            ('STOP LOSS', f"${t_targets['stop_loss']:.2f}", dcolor),
-            ('TP1', f"${t_targets['tp1']:.2f}", _hex(config.BUY_COLOR)),
-            ('TP2', f"${t_targets['tp2']:.2f}", _hex(config.BUY_COLOR)),
-            ('TP3', f"${t_targets['tp3']:.2f}", _hex(config.BUY_COLOR)),
+            (i18n.label('entry', lang), f"${t_targets['entry']:.2f}", gold),
+            (i18n.label('stop_loss', lang), f"${t_targets['stop_loss']:.2f}", dcolor),
+            (i18n.label('tp1', lang), f"${t_targets['tp1']:.2f}", _hex(config.BUY_COLOR)),
+            (i18n.label('tp2', lang), f"${t_targets['tp2']:.2f}", _hex(config.BUY_COLOR)),
+            (i18n.label('tp3', lang), f"${t_targets['tp3']:.2f}", _hex(config.BUY_COLOR)),
         ]
-        label_font = regular(26)
+        label_font = font_regular(26)
         value_font = bold(38)
         row_h = 72
         for i, (label, value, color) in enumerate(rows):
@@ -228,21 +231,27 @@ def _render_frame(t, timeline, hook, cta, base_layer):
             if row_p <= 0:
                 continue
             ry = y_rows + i * row_h
+            label = i18n.shape(label, lang)
 
             def draw_row(d, label=label, value=value, color=color, ry=ry, label_font=label_font, value_font=value_font):
                 d.rounded_rectangle([pad, ry, w - pad, ry + row_h - 12], radius=14,
                                      fill=(30, 35, 51), outline=(60, 68, 90), width=2)
-                d.text((pad + 26, ry + 18), label, font=label_font, fill=muted)
                 val_w = d.textlength(value, font=value_font)
-                d.text((w - pad - 26 - val_w, ry + 10), value, font=value_font, fill=color)
+                if lang == 'ur':
+                    label_w = d.textlength(label, font=label_font)
+                    d.text((w - pad - 26 - label_w, ry + 18), label, font=label_font, fill=muted)
+                    d.text((pad + 26, ry + 10), value, font=value_font, fill=color)
+                else:
+                    d.text((pad + 26, ry + 18), label, font=label_font, fill=muted)
+                    d.text((w - pad - 26 - val_w, ry + 10), value, font=value_font, fill=color)
 
             frame = _paste_faded(frame, draw_row, int(255 * row_p), y_offset=(1 - row_p) * 16)
 
     # CTA
     cta_p = _ease_out(_progress(t, timeline.cta_start, timeline.cta_fade))
     if cta_p > 0:
-        cta_font = bold(38)
-        cta_lines = _wrap_text(scratch, _strip_emoji(cta), cta_font, w - 2 * pad)[:2]
+        cta_font = font_bold(38)
+        cta_lines = _wrap_text(scratch, _strip_emoji(cta), cta_font, w - 2 * pad, lang)[:2]
 
         def draw_cta(d):
             cy = h - 220 - (len(cta_lines) - 1) * 48

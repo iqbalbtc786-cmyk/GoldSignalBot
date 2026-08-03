@@ -64,6 +64,16 @@ variables) and fill in only the channels you want:
 | **Instagram** | `IG_BUSINESS_ACCOUNT_ID`, `IG_ACCESS_TOKEN`, `MEDIA_PUBLIC_BASE_URL` | Instagram's API only accepts a **public URL** for media, not a file upload — run `app.py` (see Deployment below) somewhere with a public hostname. On Render, `MEDIA_PUBLIC_BASE_URL` is auto-detected, nothing to set by hand. |
 | **Twitter/X** | `TWITTER_API_KEY`, `TWITTER_API_SECRET`, `TWITTER_ACCESS_TOKEN`, `TWITTER_ACCESS_SECRET` | Needs a developer app with read+write access. |
 
+### Language
+
+`SOCIAL_LANGUAGE=ur` (default) writes hooks/captions in Pakistani Urdu
+and draws Urdu text directly onto the image card and reel — properly
+shaped (correct letter-joining) and right-to-left, using the bundled
+Noto Naskh Arabic font (`social/assets/fonts/`), so it doesn't depend on
+whatever fonts happen to be on the deploy host. BUY/SELL and price
+numbers stay in English/digits since that's how Pakistani trading
+channels write them too. Set `SOCIAL_LANGUAGE=en` for English instead.
+
 Other useful settings:
 
 - `SOCIAL_AUTOPOST_ENABLED=false` — generate content but don't publish

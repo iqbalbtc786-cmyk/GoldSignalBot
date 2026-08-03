@@ -52,6 +52,9 @@ TWITTER_ACCESS_TOKEN = os.getenv('TWITTER_ACCESS_TOKEN')
 TWITTER_ACCESS_SECRET = os.getenv('TWITTER_ACCESS_SECRET')
 
 # --- Posting behaviour ---------------------------------------------------
+# 'ur' (Pakistani Urdu, default) or 'en'. Controls hooks, captions, and
+# the text rendered onto the image card/reel.
+SOCIAL_LANGUAGE = os.getenv('SOCIAL_LANGUAGE', 'ur').lower()
 # Master switch — set to 'false' to generate content without publishing.
 SOCIAL_AUTOPOST_ENABLED = os.getenv('SOCIAL_AUTOPOST_ENABLED', 'true').lower() == 'true'
 # Post a reel/video only for actionable BUY/SELL signals by default
@@ -59,8 +62,9 @@ SOCIAL_AUTOPOST_ENABLED = os.getenv('SOCIAL_AUTOPOST_ENABLED', 'true').lower() =
 POST_REEL_ON_NEUTRAL = os.getenv('POST_REEL_ON_NEUTRAL', 'false').lower() == 'true'
 # Minimum confidence required before the social pipeline fires at all.
 SOCIAL_CONFIDENCE_THRESHOLD = int(os.getenv('SOCIAL_CONFIDENCE_THRESHOLD', '70'))
-DISCLAIMER = os.getenv(
-    'SOCIAL_DISCLAIMER',
+DISCLAIMER = os.getenv('SOCIAL_DISCLAIMER') or (
+    'یہ مالی مشورہ نہیں ہے۔ ٹریڈنگ میں خطرہ شامل ہے — ہمیشہ مناسب رسک مینجمنٹ اپنائیں۔'
+    if SOCIAL_LANGUAGE == 'ur' else
     'Not financial advice. Trading involves risk — always use proper risk management.'
 )
 
