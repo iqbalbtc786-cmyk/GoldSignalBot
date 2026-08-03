@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+output/*.jpg
+output/*.mp4
+!output/.gitkeep
+venv/

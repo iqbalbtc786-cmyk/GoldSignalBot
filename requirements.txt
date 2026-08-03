@@ -5,3 +5,10 @@ requests
 python-dateutil
 pytz
 schedule
+
+# --- Social media auto-posting workflow ---
+Pillow>=10.0
+moviepy>=2.0
+imageio-ffmpeg>=0.4.9
+tweepy>=4.14
+flask>=3.0
