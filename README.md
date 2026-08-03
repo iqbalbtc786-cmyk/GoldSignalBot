@@ -61,7 +61,7 @@ variables) and fill in only the channels you want:
 |---|---|---|
 | **Telegram** | `TELEGRAM_TOKEN`, `TELEGRAM_SOCIAL_CHANNEL_ID` (falls back to `TELEGRAM_CHAT_ID`) | Works immediately — direct file upload, no extra setup. |
 | **Facebook Page** | `FACEBOOK_PAGE_ID`, `FACEBOOK_PAGE_ACCESS_TOKEN` | Direct file upload via Graph API. Create a Meta app + Page token with `pages_manage_posts`. |
-| **Instagram** | `IG_BUSINESS_ACCOUNT_ID`, `IG_ACCESS_TOKEN`, `MEDIA_PUBLIC_BASE_URL` | Instagram's API only accepts a **public URL** for media, not a file upload. Deploy `media_server.py` (the `web` process in the `Procfile`) somewhere with a public hostname and point `MEDIA_PUBLIC_BASE_URL` at it. |
+| **Instagram** | `IG_BUSINESS_ACCOUNT_ID`, `IG_ACCESS_TOKEN`, `MEDIA_PUBLIC_BASE_URL` | Instagram's API only accepts a **public URL** for media, not a file upload — run `app.py` (see Deployment below) somewhere with a public hostname. On Render, `MEDIA_PUBLIC_BASE_URL` is auto-detected, nothing to set by hand. |
 | **Twitter/X** | `TWITTER_API_KEY`, `TWITTER_API_SECRET`, `TWITTER_ACCESS_TOKEN`, `TWITTER_ACCESS_SECRET` | Needs a developer app with read+write access. |
 
 Other useful settings:
@@ -95,12 +95,38 @@ Generated files are saved to `output/` (configurable via
 
 ## Deployment
 
-`Procfile` declares two process types:
+`app.py` is the recommended entrypoint: it runs the trading/social bot's
+scheduler in a background thread and a small Flask status/media server
+in the foreground, both in **one process**. That matters once Instagram
+is involved — its API fetches media from a public URL, and a URL only
+sees files that exist on the *same* filesystem as the process that
+generated them. Splitting the bot and the media server into two
+separate services (e.g. a Render "worker" + a Render "web" service)
+would put them in two different containers that don't share a disk, so
+the media server would 404 on everything the bot generates. Running
+both in `app.py` avoids that entirely — and its own public URL doubles
+as `MEDIA_PUBLIC_BASE_URL`.
 
-- `worker` — the trading/social bot (`bot.py`), always needed.
-- `web` — `media_server.py`, only needed if you're posting to
-  Instagram (it serves `output/` publicly so Instagram's API can fetch
-  the media). Skip/disable it if you're not using Instagram.
+If you don't need Instagram, you can skip all of that and just run
+`python bot.py` as a plain background worker instead — Telegram,
+Facebook and Twitter/X publishing don't need a public URL.
+
+### Deploy to Render
+
+1. Push this repo to GitHub (already done if you're reading this from
+   a PR branch).
+2. Render Dashboard → **New** → **Blueprint** → select this repo.
+   Render reads `render.yaml` and creates one Web Service (`app.py`).
+3. Fill in `TELEGRAM_TOKEN` and `TELEGRAM_CHAT_ID` when prompted —
+   those are the only required values. Deploy.
+4. Open the service's `.onrender.com` URL — it returns a small status
+   JSON confirming the bot is live and which social channels are
+   currently configured.
+5. To turn on Facebook/Instagram/Twitter/AI-written hooks later, add
+   the relevant env vars from `.env.example` in the Render dashboard
+   (Environment tab) — no code change or redeploy needed, Render
+   restarts the service automatically when env vars change.
 
 `Dockerfile` installs `fonts-dejavu-core` for the image/reel text
-rendering.
+rendering, for anyone deploying via container instead of Render's
+native Python runtime.

@@ -40,8 +40,10 @@ IG_ACCESS_TOKEN = os.getenv('IG_ACCESS_TOKEN', FACEBOOK_PAGE_ACCESS_TOKEN)
 # Instagram's Content Publishing API requires a public URL for the
 # image/video (it will not accept a raw file upload). MEDIA_PUBLIC_BASE_URL
 # should point at wherever media_server.py is reachable from the internet,
-# e.g. https://your-app.onrender.com
-MEDIA_PUBLIC_BASE_URL = os.getenv('MEDIA_PUBLIC_BASE_URL', '')
+# e.g. https://your-app.onrender.com — on Render this is auto-detected from
+# RENDER_EXTERNAL_URL (a variable Render injects into every web service),
+# so nothing needs to be set by hand there.
+MEDIA_PUBLIC_BASE_URL = os.getenv('MEDIA_PUBLIC_BASE_URL') or os.getenv('RENDER_EXTERNAL_URL', '')
 
 # --- Twitter / X --------------------------------------------------------
 TWITTER_API_KEY = os.getenv('TWITTER_API_KEY')

@@ -5,6 +5,6 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY bot.py media_server.py .
+COPY bot.py media_server.py app.py .
 COPY social/ ./social/
-CMD ["python", "bot.py"]
+CMD ["python", "app.py"]
