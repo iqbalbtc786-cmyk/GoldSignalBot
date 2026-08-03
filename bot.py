@@ -42,12 +42,23 @@ METAAPI_SYMBOL = os.getenv('METAAPI_SYMBOL', 'XAUUSD')
 # still runs fine and just sends the scheduled signals.
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
 CHART_ANALYSIS_MODEL = 'claude-opus-5'
+CHAT_MODEL = 'claude-opus-5'
+MAX_CHAT_HISTORY = 20  # messages (≈10 turns) kept per chat, older ones are dropped
+
+CHAT_SYSTEM_PROMPT = (
+    'آپ "گولڈ سگنل بوٹ" ہیں، ایک Telegram بوٹ جو XAUUSD (گولڈ) کے لیے ٹریڈنگ سگنلز بھیجتا ہے۔ '
+    'صارف سے دوستانہ اور مختصر انداز میں بات کریں (زیادہ تر اردو میں، اگر صارف انگریزی میں لکھے تو انگریزی میں جواب دیں)۔ '
+    'اگر صارف حالیہ درست سگنل/قیمت مانگے تو بتائیں کہ درست نمبروں کے لیے /signal کمانڈ بھیجیں (وہاں سے live data آتا ہے)، '
+    'لیکن مارکیٹ، گولڈ، DXY، یا عمومی ٹریڈنگ سوالات پر عمومی رائے اور معلومات ضرور دیں۔ '
+    'جب بھی کوئی خاص buy/sell رائے دیں تو ایک مختصر ڈسکلیمر شامل کریں کہ یہ مالی مشورہ نہیں ہے۔'
+)
 
 HELP_TEXT = (
     '🤖 <b>گولڈ سگنل بوٹ</b>\n\n'
     'کمانڈز:\n'
     '/signal - ابھی کا XAUUSD تجزیہ حاصل کریں\n'
     '/help - یہ پیغام دوبارہ دکھائیں\n\n'
+    '💬 آپ مجھ سے عام گفتگو بھی کر سکتے ہیں - کوئی بھی سوال یا بات لکھ کر بھیج دیں۔\n'
     '📷 آپ گولڈ/XAUUSD چارٹ کی اسکرین شاٹ بھی بھیج سکتے ہیں، میں اس کا تجزیہ کر دوں گا۔'
 )
 
@@ -64,6 +75,8 @@ class GoldSignalBot:
         self.atr_period = 14
         self.confidence_threshold = CONFIDENCE_THRESHOLD
         self.use_metaapi = bool(METAAPI_TOKEN and METAAPI_ACCOUNT_ID)
+        self.anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
+        self.chat_histories = {}  # chat_id -> list of {"role", "content"} messages
 
         if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
             logger.warning('Telegram credentials not configured')
@@ -481,17 +494,16 @@ class GoldSignalBot:
 
     def analyze_chart_screenshot(self, image_bytes, media_type='image/jpeg'):
         """Ask Claude to read a trading chart screenshot and give a directional view"""
-        if not ANTHROPIC_API_KEY:
+        if not self.anthropic_client:
             return (
                 '⚠️ چارٹ امیج تجزیہ ابھی سیٹ اپ نہیں ہے۔ بوٹ چلانے والے سے کہیں کہ '
                 'ANTHROPIC_API_KEY سیٹ کریں۔'
             )
 
         try:
-            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
             image_b64 = base64.standard_b64encode(image_bytes).decode('utf-8')
 
-            response = client.messages.create(
+            response = self.anthropic_client.messages.create(
                 model=CHART_ANALYSIS_MODEL,
                 max_tokens=1024,
                 messages=[{
@@ -539,6 +551,43 @@ class GoldSignalBot:
         result = self.analyze_chart_screenshot(image_bytes)
         self.send_telegram_signal(f'📊 <b>چارٹ تجزیہ</b>\n\n{result}', chat_id=chat_id)
 
+    def chat_with_claude(self, chat_id, user_text):
+        """Free-form conversation, with a short rolling memory per chat"""
+        if not self.anthropic_client:
+            return (
+                '⚠️ چیٹ فیچر ابھی سیٹ اپ نہیں ہے (ANTHROPIC_API_KEY موجود نہیں)۔ '
+                'آپ /signal کمانڈ سے موجودہ سگنل حاصل کر سکتے ہیں۔'
+            )
+
+        history = self.chat_histories.setdefault(chat_id, [])
+        history.append({'role': 'user', 'content': user_text})
+        history[:] = history[-MAX_CHAT_HISTORY:]
+
+        try:
+            response = self.anthropic_client.messages.create(
+                model=CHAT_MODEL,
+                max_tokens=1024,
+                system=CHAT_SYSTEM_PROMPT,
+                messages=history,
+            )
+
+            if response.stop_reason == 'refusal':
+                return '⚠️ معذرت، اس سوال کا جواب نہیں دے سکتا۔ کچھ اور پوچھیں۔'
+
+            text = next((block.text for block in response.content if block.type == 'text'), None)
+            if not text:
+                return '⚠️ معذرت، جواب نہیں بن سکا، دوبارہ کوشش کریں۔'
+
+            history.append({'role': 'assistant', 'content': text})
+            history[:] = history[-MAX_CHAT_HISTORY:]
+            return text
+        except Exception as e:
+            logger.error(f'Error in chat_with_claude: {e}')
+            # Don't keep a dangling user turn with no reply
+            if history and history[-1]['role'] == 'user':
+                history.pop()
+            return '⚠️ ابھی جواب دینے میں مسئلہ ہوا، براہ کرم دوبارہ کوشش کریں۔'
+
     def handle_update(self, update):
         """Route a single Telegram update to the right handler"""
         message = update.get('message')
@@ -560,10 +609,12 @@ class GoldSignalBot:
         lowered = text.lower()
         if lowered.startswith('/start') or lowered.startswith('/help'):
             self.send_telegram_signal(HELP_TEXT, chat_id=chat_id)
-        else:
-            # /signal, /price, or any other free-text message - treat as
-            # "what's the current read" since that's this bot's only job
+        elif lowered.startswith('/signal') or lowered.startswith('/price'):
             self.handle_signal_request(chat_id)
+        else:
+            # Any other free-text message is a real chat turn
+            reply = self.chat_with_claude(chat_id, text)
+            self.send_telegram_signal(reply, chat_id=chat_id)
 
     def run_telegram_listener(self):
         """Long-poll Telegram for incoming messages/photos and reply to them"""
