@@ -11,6 +11,8 @@ import pytz
 from dateutil.relativedelta import relativedelta
 import schedule
 
+from social.pipeline import run as run_social_pipeline
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -331,6 +333,22 @@ class GoldSignalBot:
             logger.error(f'Error sending Telegram signal: {e}')
             return False
     
+    def run_social_media_workflow(self, confidence, direction, analysis_1h, targets):
+        """Auto-generate and publish social media content (hook-driven
+        captions, an image card, and a short reel) for this signal.
+        Never allowed to break the trading bot itself."""
+        try:
+            signal = {
+                'id': datetime.now(pytz.UTC).strftime('%Y%m%dT%H%M%S'),
+                'direction': direction,
+                'price': analysis_1h['close'],
+                'confidence': confidence,
+                'targets': targets if direction != 'NEUTRAL' else None,
+            }
+            run_social_pipeline(signal)
+        except Exception as e:
+            logger.error(f'Error running social media workflow: {e}')
+
     def analyze_xauusd(self):
         """Main analysis function"""
         try:
@@ -369,6 +387,8 @@ class GoldSignalBot:
                     if message:
                         logger.info(f'Signal Message:\n{message}')
                         self.send_telegram_signal(message)
+
+                    self.run_social_media_workflow(confidence, direction, analysis_1h, targets)
             else:
                 logger.info(f'Signal below threshold ({confidence}% < {self.confidence_threshold}%)')
         

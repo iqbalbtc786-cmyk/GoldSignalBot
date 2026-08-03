@@ -1,6 +1,10 @@
 FROM python:3.11-slim
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY bot.py .
-CMD ["python", "bot.py"]
+COPY bot.py media_server.py app.py .
+COPY social/ ./social/
+CMD ["python", "app.py"]

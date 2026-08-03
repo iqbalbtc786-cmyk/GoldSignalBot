@@ -5,3 +5,15 @@ requests
 python-dateutil
 pytz
 schedule
+
+# --- Social media auto-posting workflow ---
+Pillow>=10.0
+moviepy>=2.0
+imageio-ffmpeg>=0.4.9
+tweepy>=4.14
+flask>=3.0
+
+# --- Urdu text shaping (letter-joining + right-to-left order) for the
+# --- generated image card / reel ---
+arabic-reshaper>=3.0
+python-bidi>=0.4

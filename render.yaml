@@ -1,0 +1,48 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Deploys GoldSignalBot as a single Web Service (app.py), which runs the
+# trading/social bot in the background and exposes a status page + the
+# media server Instagram needs, all on one shared filesystem.
+#
+# Deploy: Render Dashboard -> New -> Blueprint -> select this repo.
+# Only TELEGRAM_TOKEN and TELEGRAM_CHAT_ID are required to get signals
+# posting to Telegram; every other variable below is optional and can
+# be added later (from the Render dashboard, no redeploy needed) to
+# turn on Facebook/Instagram/Twitter/AI-written hooks.
+services:
+  - type: web
+    name: goldsignalbot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: SOCIAL_AUTOPOST_ENABLED
+        value: "true"
+      - key: SOCIAL_CONFIDENCE_THRESHOLD
+        value: "70"
+      # --- Optional: fill in later to enable more channels ---
+      - key: TELEGRAM_SOCIAL_CHANNEL_ID
+        sync: false
+      - key: FACEBOOK_PAGE_ID
+        sync: false
+      - key: FACEBOOK_PAGE_ACCESS_TOKEN
+        sync: false
+      - key: IG_BUSINESS_ACCOUNT_ID
+        sync: false
+      - key: IG_ACCESS_TOKEN
+        sync: false
+      - key: TWITTER_API_KEY
+        sync: false
+      - key: TWITTER_API_SECRET
+        sync: false
+      - key: TWITTER_ACCESS_TOKEN
+        sync: false
+      - key: TWITTER_ACCESS_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
