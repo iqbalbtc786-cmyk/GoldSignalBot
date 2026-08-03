@@ -24,6 +24,15 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 CONFIDENCE_THRESHOLD = 70
 SIGNAL_CHECK_INTERVAL = 30  # minutes
 
+# Optional MetaApi.cloud bridge (lets the bot read price data straight from
+# a real MT5 broker account, e.g. Exness) instead of Yahoo Finance. Only
+# used when both variables are set; otherwise the bot falls back to
+# yfinance automatically. See README.md for how to obtain these.
+METAAPI_TOKEN = os.getenv('METAAPI_TOKEN')
+METAAPI_ACCOUNT_ID = os.getenv('METAAPI_ACCOUNT_ID')
+METAAPI_REGION = os.getenv('METAAPI_REGION', 'new-york')
+METAAPI_SYMBOL = os.getenv('METAAPI_SYMBOL', 'XAUUSD')
+
 class GoldSignalBot:
     def __init__(self):
         self.symbol = 'XAUUSD=X'
@@ -36,12 +45,57 @@ class GoldSignalBot:
         self.bb_std = 2
         self.atr_period = 14
         self.confidence_threshold = CONFIDENCE_THRESHOLD
-        
+        self.use_metaapi = bool(METAAPI_TOKEN and METAAPI_ACCOUNT_ID)
+
         if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
             logger.warning('Telegram credentials not configured')
-    
+
+        if self.use_metaapi:
+            logger.info(f'Using MetaApi broker feed for {METAAPI_SYMBOL} (account {METAAPI_ACCOUNT_ID})')
+        else:
+            logger.info('Using Yahoo Finance (yfinance) as the price data source')
+
+    def fetch_data_metaapi(self, interval, limit=500):
+        """Fetch OHLCV candles from the connected MT5 broker account via MetaApi.cloud"""
+        try:
+            url = (
+                f'https://mt-market-data-client-api-v1.{METAAPI_REGION}.agiliumtrade.ai'
+                f'/users/current/accounts/{METAAPI_ACCOUNT_ID}'
+                f'/historical-market-data/symbols/{METAAPI_SYMBOL}/timeframes/{interval}/candles'
+            )
+            headers = {'auth-token': METAAPI_TOKEN}
+            response = requests.get(url, headers=headers, params={'limit': limit}, timeout=15)
+
+            if response.status_code != 200:
+                logger.error(f'MetaApi error {response.status_code}: {response.text}')
+                return None
+
+            candles = response.json()
+            if not candles:
+                logger.warning(f'No MetaApi candles returned for {METAAPI_SYMBOL} {interval}')
+                return None
+
+            data = pd.DataFrame(candles)
+            data = data.rename(columns={
+                'open': 'Open', 'high': 'High', 'low': 'Low',
+                'close': 'Close', 'tickVolume': 'Volume'
+            })
+            data['time'] = pd.to_datetime(data['time'])
+            data = data.set_index('time').sort_index()
+            return data[['Open', 'High', 'Low', 'Close', 'Volume']]
+        except Exception as e:
+            logger.error(f'Error fetching MetaApi data: {e}')
+            return None
+
     def fetch_data(self, symbol, interval, period):
-        """Fetch OHLCV data from yfinance"""
+        """Fetch OHLCV data, preferring the broker feed (MetaApi) for the gold symbol
+        when configured, falling back to yfinance otherwise."""
+        if self.use_metaapi and symbol == self.symbol:
+            data = self.fetch_data_metaapi(interval)
+            if data is not None:
+                return data
+            logger.warning('MetaApi fetch failed, falling back to yfinance for this cycle')
+
         try:
             data = yf.download(symbol, interval=interval, period=period, progress=False)
             if data.empty:
@@ -375,13 +429,27 @@ class GoldSignalBot:
         except Exception as e:
             logger.error(f'Error in XAUUSD analysis: {e}')
     
+    def send_welcome_message(self):
+        """Send a one-time welcome message when the bot comes online"""
+        source = f'MetaApi ({METAAPI_SYMBOL})' if self.use_metaapi else 'Yahoo Finance'
+        message = (
+            '🟢 Gold Signal Bot is now LIVE\n\n'
+            f'📡 Data source: {source}\n'
+            f'⏱ Checking XAUUSD every {SIGNAL_CHECK_INTERVAL} minutes\n'
+            f'🎯 Confidence threshold: {self.confidence_threshold}%\n\n'
+            f'⏰ {datetime.now(pytz.UTC).strftime("%Y-%m-%d %H:%M:%S UTC")}'
+        )
+        self.send_telegram_signal(message)
+
     def start(self):
         """Start the bot scheduler"""
         logger.info('GoldSignalBot started')
-        
+
+        self.send_welcome_message()
+
         # Schedule the analysis to run every 30 minutes
         schedule.every(SIGNAL_CHECK_INTERVAL).minutes.do(self.analyze_xauusd)
-        
+
         # Run initial analysis
         self.analyze_xauusd()
         

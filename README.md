@@ -23,40 +23,65 @@ deploy karna hoga jo `python bot.py` ko 24/7 chalati rahe.
 secrets hain. Inhe seedha apne hosting platform ke Environment Variables
 mein `TELEGRAM_TOKEN` aur `TELEGRAM_CHAT_ID` ke naam se set karein.
 
-### 2. Free hosting (koi hosting maujood nahi to)
+### 2. Hosting options (koi hosting maujood nahi to)
 
-Sabse aasan free option: [Railway.app](https://railway.app)
+Bot ek chhota "worker" hai (koi website/UI nahi), isliye background-worker
+hosting chahiye jo `python bot.py` ko 24/7 chalati rahe:
+
+| Platform | Free tier | Notes |
+|---|---|---|
+| **Railway.app** | Haan (trial credit) | Sabse aasan, GitHub se ek-click deploy, `Dockerfile`/`Procfile` khud detect karta hai |
+| **Render.com** | Background worker free nahi (2025 se), Web Service free hai | Free rakhne ke liye chhoti tabdeeli chahiye (health-check endpoint) |
+| **Fly.io** | Chhota free allowance | Thoda zyada CLI/technical setup |
+| **PythonAnywhere** | Free "Always-on task" nahi milta free plan mein | Paid plan chahiye |
+| **Apna VPS** (DigitalOcean/Contabo/Hetzner) | Nahi, ~$4-6/month | Poora control, `systemd`/`Docker` se chalayein |
+
+**Recommendation:** Railway.app se shuru karein (steps neeche) — sabse
+kam setup, aur GitHub repo already ready hai.
 
 1. GitHub account se Railway par sign up karein.
 2. "New Project" → "Deploy from GitHub repo" → is repo (`GoldSignalBot`)
    ko select karein.
 3. Railway khud `Dockerfile`/`Procfile` detect kar ke worker start kar dega.
-4. Project → Variables mein `TELEGRAM_TOKEN` aur `TELEGRAM_CHAT_ID` add
-   karein, redeploy karein.
-5. Logs mein "GoldSignalBot started" dikhega — bot ab live hai, har 30
-   minute mein XAUUSD analyze kar ke signal bhejega.
+4. Project → Variables mein neeche di gayi env variables add karein,
+   redeploy karein.
+5. Logs mein "GoldSignalBot started" dikhega, aur aapke Telegram group
+   mein turant "🟢 Gold Signal Bot is now LIVE" welcome message aa
+   jayega — har baar jab bot start/restart hota hai yeh message bhejta
+   hai.
 
-Render.com aur ek chhota Linux VPS (DigitalOcean/Contabo) bhi isi tarah
-kaam karte hain.
+### 3. Apna Exness MT5 account link karna (optional, behtar accuracy)
 
-### 3. MetaTrader 5 (MT5) data — limitation
+Aapka Exness account (`#472155889`, MT5, Standard) seedha is bot se
+connect nahi ho sakta kyunki `MetaTrader5` Python package sirf
+**Windows** par, MT5 terminal ke saath kaam karta hai — Railway/Render
+jaisi Linux hosting is par nahi chalti.
 
-`MetaTrader5` Python package sirf **Windows** par, MT5 terminal ke saath
-kaam karta hai — yeh Railway/Render/Docker jaisi Linux hosting par nahi
-chalta. Do practical raastay hain:
+Iska hal — **[MetaApi.cloud](https://metaapi.cloud)** (cloud bridge,
+free tier maujood hai):
 
-- **Windows VPS** par MT5 terminal login rakh kar `MetaTrader5` package
-  use karein (zyada control, lekin VPS cost aur maintenance khud dekhna
-  hoga).
-- **[MetaApi.cloud](https://metaapi.cloud)** jaisi cloud bridge service
-  use karein — yeh MT5 account se REST/WebSocket ke zariye data deti hai,
-  Linux hosting par bhi chalti hai (free tier available). Iske liye apna
-  MT5 login/password/server MetaApi account mein connect karna hoga, aur
-  humein sirf unka API token env variable ke through dena hoga.
+1. MetaApi.cloud par sign up karein.
+2. Dashboard mein apna Exness MT5 account add karein (login `472155889`,
+   password, server — yeh sirf MetaApi ke apne dashboard mein daalein,
+   kisi aur ko na dein).
+3. MetaApi account ko "deploy" karein, uska **Account ID** copy karein.
+4. Apna **API token** generate karein (Dashboard → API keys).
+5. In dono ko hosting platform (Railway) ke Environment Variables mein
+   set karein:
+   - `METAAPI_TOKEN`
+   - `METAAPI_ACCOUNT_ID`
+   - `METAAPI_SYMBOL` (default `XAUUSD` — apne Exness account mein gold
+     ka exact symbol name check kar lein, kabhi `XAUUSDm` ya `GOLD` bhi
+     hota hai)
 
-Jab tak in mein se koi setup nahi hota, bot maujooda `yfinance` (Yahoo
-Finance) data aur DXY bias par hi chalta rahega — yeh free hai aur
-kisi extra account ki zaroorat nahi.
+Bot khud detect kar lega ke yeh variables set hain aur automatically
+Exness ke real price feed par switch ho jayega (agar MetaApi se data na
+milay to us cycle ke liye Yahoo Finance par fallback kar dega, taake
+bot kabhi crash na ho).
+
+Jab tak yeh setup nahi karte, bot `yfinance` (Yahoo Finance) data aur
+DXY bias par hi chalta rahega — yeh free hai aur kisi extra account ki
+zaroorat nahi.
 
 ## Environment Variables
 
@@ -64,6 +89,10 @@ kisi extra account ki zaroorat nahi.
 |---|---|---|
 | `TELEGRAM_TOKEN` | Yes | BotFather se mila bot token |
 | `TELEGRAM_CHAT_ID` | Yes | Jis chat/channel ko signal jayega |
+| `METAAPI_TOKEN` | Optional | MetaApi.cloud API token (Exness/MT5 real feed ke liye) |
+| `METAAPI_ACCOUNT_ID` | Optional | MetaApi mein deploy kiye gaye Exness account ka ID |
+| `METAAPI_REGION` | Optional | MetaApi region (default `new-york`) |
+| `METAAPI_SYMBOL` | Optional | Broker par gold ka symbol name (default `XAUUSD`) |
 
 ## Local test
 
