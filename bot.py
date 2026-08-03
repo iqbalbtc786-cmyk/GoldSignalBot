@@ -44,12 +44,11 @@ ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
 CHART_ANALYSIS_MODEL = 'claude-opus-5'
 
 HELP_TEXT = (
-    '🤖 <b>Gold Signal Bot</b>\n\n'
-    'Commands:\n'
-    '/signal - Get the current XAUUSD analysis right now\n'
-    '/help - Show this message\n\n'
-    '📷 You can also send a screenshot of a gold/XAUUSD chart and I will '
-    'give you a read on it.'
+    '🤖 <b>گولڈ سگنل بوٹ</b>\n\n'
+    'کمانڈز:\n'
+    '/signal - ابھی کا XAUUSD تجزیہ حاصل کریں\n'
+    '/help - یہ پیغام دوبارہ دکھائیں\n\n'
+    '📷 آپ گولڈ/XAUUSD چارٹ کی اسکرین شاٹ بھی بھیج سکتے ہیں، میں اس کا تجزیہ کر دوں گا۔'
 )
 
 class GoldSignalBot:
@@ -329,19 +328,19 @@ class GoldSignalBot:
             current_price = data['Close'].iloc[-1]
             
             if current_price > recent_highs * 0.99:
-                return 'Uptrend'
+                return 'اپ ٹرینڈ'
             elif current_price < recent_lows * 1.01:
-                return 'Downtrend'
+                return 'ڈاؤن ٹرینڈ'
             else:
-                return 'Consolidation'
+                return 'استحکام (Consolidation)'
         except Exception as e:
             logger.error(f'Error getting market structure: {e}')
-            return 'Unknown'
-    
+            return 'نامعلوم'
+
     def check_news_risk(self):
         """Check for potential news risk (simplified)"""
         # In production, integrate with news API or economic calendar
-        return 'Low'
+        return 'کم (Low)'
     
     def generate_signal_message(self, confidence, direction, analysis_1h, analysis_4h, targets):
         """Generate formatted signal message"""
@@ -349,31 +348,32 @@ class GoldSignalBot:
             dxy_bias, dxy_direction = self.get_dxy_bias()
             
             if direction == 'NEUTRAL':
-                message = f"🔔 XAUUSD SIGNAL\n\n📊 No Trade - Waiting for Confirmation\n\nConfidence: {confidence}%\nThreshold: {self.confidence_threshold}%\n\n⏰ {datetime.now(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                message = f"🔔 XAUUSD سگنل\n\n📊 کوئی ٹریڈ نہیں - واضح تصدیق کا انتظار\n\nکانفیڈنس: {confidence}%\nتھریش ہولڈ: {self.confidence_threshold}%\n\n⏰ {datetime.now(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}"
             else:
                 data_1h = self.fetch_data(self.symbol, '1h', '30d')
                 market_structure = self.get_market_structure(data_1h)
                 news_risk = self.check_news_risk()
-                
-                message = f"""🔔 XAUUSD SIGNAL
+                bb_position = 'اپر بینڈ' if analysis_1h['close'] > analysis_1h['bb_middle'] else 'لوئر بینڈ'
 
-📈 Direction: {direction}
-💪 Confidence: {confidence}%
+                message = f"""🔔 XAUUSD سگنل
 
-💰 Entry: ${targets['entry']:.2f}
-🛑 Stop Loss: ${targets['stop_loss']:.2f}
-🎯 TP1: ${targets['tp1']:.2f}
-🎯 TP2: ${targets['tp2']:.2f}
-🎯 TP3: ${targets['tp3']:.2f}
+📈 سمت: {direction}
+💪 کانفیڈنس: {confidence}%
 
-💱 DXY Bias: {dxy_direction} ({dxy_bias})
-📊 Market Structure: {market_structure}
-📍 RSI (1H): {analysis_1h['rsi']:.2f}
-📌 BB Position: {'Upper Band' if analysis_1h['close'] > analysis_1h['bb_middle'] else 'Lower Band'}
-⚠️ News Risk: {news_risk}
+💰 انٹری: ${targets['entry']:.2f}
+🛑 اسٹاپ لاس: ${targets['stop_loss']:.2f}
+🎯 ٹی پی 1: ${targets['tp1']:.2f}
+🎯 ٹی پی 2: ${targets['tp2']:.2f}
+🎯 ٹی پی 3: ${targets['tp3']:.2f}
+
+💱 ڈالر انڈیکس (DXY): {dxy_direction} ({dxy_bias})
+📊 مارکیٹ کی صورتحال: {market_structure}
+📍 آر ایس آئی (1H): {analysis_1h['rsi']:.2f}
+📌 بولنگر بینڈ پوزیشن: {bb_position}
+⚠️ نیوز رسک: {news_risk}
 
 ⏰ {datetime.now(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}"""
-            
+
             return message
         except Exception as e:
             logger.error(f'Error generating signal message: {e}')
@@ -457,7 +457,7 @@ class GoldSignalBot:
         confidence, direction, message = self.generate_current_analysis()
 
         if message is None:
-            self.send_telegram_signal('⚠️ Could not fetch price data right now, please try again in a moment.', chat_id=chat_id)
+            self.send_telegram_signal('⚠️ ابھی پرائس ڈیٹا حاصل نہیں ہو سکا، براہ کرم تھوڑی دیر بعد دوبارہ کوشش کریں۔', chat_id=chat_id)
             return
 
         self.send_telegram_signal(message, chat_id=chat_id)
@@ -483,8 +483,8 @@ class GoldSignalBot:
         """Ask Claude to read a trading chart screenshot and give a directional view"""
         if not ANTHROPIC_API_KEY:
             return (
-                "⚠️ Chart image analysis isn't configured yet. Ask whoever runs this bot "
-                "to set an ANTHROPIC_API_KEY."
+                '⚠️ چارٹ امیج تجزیہ ابھی سیٹ اپ نہیں ہے۔ بوٹ چلانے والے سے کہیں کہ '
+                'ANTHROPIC_API_KEY سیٹ کریں۔'
             )
 
         try:
@@ -509,8 +509,9 @@ class GoldSignalBot:
                                 'indicators, support/resistance levels), give a short technical read: '
                                 '1) overall trend, 2) key support/resistance levels you can see, '
                                 '3) a tentative BUY / SELL / NEUTRAL bias with your reasoning. '
-                                'Keep it under 150 words, use plain text suitable for a Telegram message, '
-                                'and end with a one-line disclaimer that this is not financial advice.'
+                                'Reply in Urdu (اردو رسم الخط میں), keep it under 150 words, use plain '
+                                'text suitable for a Telegram message, and end with a one-line '
+                                'disclaimer in Urdu that this is not financial advice.'
                             )
                         }
                     ]
@@ -518,25 +519,25 @@ class GoldSignalBot:
             )
 
             if response.stop_reason == 'refusal':
-                return "⚠️ I couldn't analyze that image (declined by safety filters). Try a clearer chart screenshot."
+                return '⚠️ یہ تصویر تجزیہ نہیں ہو سکی (سیفٹی فلٹرز کی وجہ سے)۔ کوئی صاف چارٹ اسکرین شاٹ آزمائیں۔'
 
             text = next((block.text for block in response.content if block.type == 'text'), None)
-            return text or "⚠️ Couldn't read that chart, please try another screenshot."
+            return text or '⚠️ یہ چارٹ نہیں پڑھا جا سکا، براہ کرم دوسری تصویر آزمائیں۔'
         except Exception as e:
             logger.error(f'Error analyzing chart image: {e}')
-            return '⚠️ Something went wrong analyzing that image, please try again.'
+            return '⚠️ اس تصویر کا تجزیہ کرتے ہوئے کچھ غلط ہو گیا، براہ کرم دوبارہ کوشش کریں۔'
 
     def handle_chart_photo(self, chat_id, file_id):
         """Handle a photo the user sent, analyze it, and reply"""
-        self.send_telegram_signal('🔎 Analyzing your chart screenshot...', chat_id=chat_id)
+        self.send_telegram_signal('🔎 آپ کے چارٹ اسکرین شاٹ کا تجزیہ ہو رہا ہے...', chat_id=chat_id)
         image_bytes = self.download_telegram_file(file_id)
 
         if image_bytes is None:
-            self.send_telegram_signal("⚠️ Couldn't download that image, please try again.", chat_id=chat_id)
+            self.send_telegram_signal('⚠️ وہ تصویر ڈاؤن لوڈ نہیں ہو سکی، براہ کرم دوبارہ کوشش کریں۔', chat_id=chat_id)
             return
 
         result = self.analyze_chart_screenshot(image_bytes)
-        self.send_telegram_signal(f'📊 <b>Chart Read</b>\n\n{result}', chat_id=chat_id)
+        self.send_telegram_signal(f'📊 <b>چارٹ تجزیہ</b>\n\n{result}', chat_id=chat_id)
 
     def handle_update(self, update):
         """Route a single Telegram update to the right handler"""
@@ -605,10 +606,10 @@ class GoldSignalBot:
         """Send a one-time welcome message when the bot comes online"""
         source = f'MetaApi ({METAAPI_SYMBOL})' if self.use_metaapi else 'Yahoo Finance'
         message = (
-            '🟢 Gold Signal Bot is now LIVE\n\n'
-            f'📡 Data source: {source}\n'
-            f'⏱ Checking XAUUSD every {SIGNAL_CHECK_INTERVAL} minutes\n'
-            f'🎯 Confidence threshold: {self.confidence_threshold}%\n\n'
+            '🟢 گولڈ سگنل بوٹ اب لائیو ہے\n\n'
+            f'📡 ڈیٹا سورس: {source}\n'
+            f'⏱ ہر {SIGNAL_CHECK_INTERVAL} منٹ بعد XAUUSD چیک ہوگا\n'
+            f'🎯 کانفیڈنس تھریش ہولڈ: {self.confidence_threshold}%\n\n'
             f'⏰ {datetime.now(pytz.UTC).strftime("%Y-%m-%d %H:%M:%S UTC")}'
         )
         self.send_telegram_signal(message)
