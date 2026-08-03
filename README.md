@@ -83,16 +83,40 @@ Jab tak yeh setup nahi karte, bot `yfinance` (Yahoo Finance) data aur
 DXY bias par hi chalta rahega — yeh free hai aur kisi extra account ki
 zaroorat nahi.
 
+### 4. Bot se chat karna (on-demand signal + chart screenshot analysis)
+
+Bot ab sirf har 30 minute wali scheduled alerts hi nahi bhejta — aap
+usay seedha message bhi kar saktay hain:
+
+- Koi bhi message (`/signal`, "market update do", ya sirf "hi") bhejein
+  → bot turant current XAUUSD analysis nikaal kar reply karega, chahe
+  confidence threshold se kam ho.
+- Kisi gold/XAUUSD chart ka **screenshot bhej dein** → bot Claude
+  (Anthropic) ke vision model se us chart ko "dekh" kar trend,
+  support/resistance aur ek tentative BUY/SELL/NEUTRAL read de dega.
+
+Chart-screenshot feature ke liye ek extra env variable chahiye:
+
+1. [console.anthropic.com](https://console.anthropic.com) par account
+   banayein, ek **API key** generate karein.
+2. Hosting platform (Railway) ke Environment Variables mein add karein:
+   - `ANTHROPIC_API_KEY`
+
+Agar yeh set nahi hai, bot bina crash huay chal raha hai — bas photo
+bhejne par bot bata dega ke yeh feature abhi configure nahi hai. Text
+messages (`/signal`) ke liye yeh key zaroori nahi.
+
 ## Environment Variables
 
 | Variable | Required | Description |
 |---|---|---|
 | `TELEGRAM_TOKEN` | Yes | BotFather se mila bot token |
-| `TELEGRAM_CHAT_ID` | Yes | Jis chat/channel ko signal jayega |
+| `TELEGRAM_CHAT_ID` | Yes | Jis chat/channel ko scheduled signal jayega |
 | `METAAPI_TOKEN` | Optional | MetaApi.cloud API token (Exness/MT5 real feed ke liye) |
 | `METAAPI_ACCOUNT_ID` | Optional | MetaApi mein deploy kiye gaye Exness account ka ID |
 | `METAAPI_REGION` | Optional | MetaApi region (default `new-york`) |
 | `METAAPI_SYMBOL` | Optional | Broker par gold ka symbol name (default `XAUUSD`) |
+| `ANTHROPIC_API_KEY` | Optional | Chart-screenshot analysis ke liye (console.anthropic.com) |
 
 ## Local test
 

@@ -1,7 +1,9 @@
 import os
 import sys
 import time
+import base64
 import logging
+import threading
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
@@ -10,6 +12,7 @@ import requests
 import pytz
 from dateutil.relativedelta import relativedelta
 import schedule
+import anthropic
 
 # Configure logging
 logging.basicConfig(
@@ -32,6 +35,22 @@ METAAPI_TOKEN = os.getenv('METAAPI_TOKEN')
 METAAPI_ACCOUNT_ID = os.getenv('METAAPI_ACCOUNT_ID')
 METAAPI_REGION = os.getenv('METAAPI_REGION', 'new-york')
 METAAPI_SYMBOL = os.getenv('METAAPI_SYMBOL', 'XAUUSD')
+
+# Optional: lets users chat with the bot (on-demand "/signal", and photo
+# screenshots of a chart get a Claude vision read). Needs an Anthropic API
+# key (console.anthropic.com) set as ANTHROPIC_API_KEY. Without it, the bot
+# still runs fine and just sends the scheduled signals.
+ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
+CHART_ANALYSIS_MODEL = 'claude-opus-5'
+
+HELP_TEXT = (
+    '🤖 <b>Gold Signal Bot</b>\n\n'
+    'Commands:\n'
+    '/signal - Get the current XAUUSD analysis right now\n'
+    '/help - Show this message\n\n'
+    '📷 You can also send a screenshot of a gold/XAUUSD chart and I will '
+    'give you a read on it.'
+)
 
 class GoldSignalBot:
     def __init__(self):
@@ -360,21 +379,23 @@ class GoldSignalBot:
             logger.error(f'Error generating signal message: {e}')
             return None
     
-    def send_telegram_signal(self, message):
-        """Send signal to Telegram"""
-        if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+    def send_telegram_signal(self, message, chat_id=None):
+        """Send a message to Telegram (defaults to the configured broadcast chat)"""
+        target_chat_id = chat_id if chat_id is not None else TELEGRAM_CHAT_ID
+
+        if not TELEGRAM_TOKEN or not target_chat_id:
             logger.warning('Cannot send Telegram signal: credentials missing')
             return False
-        
+
         try:
             url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
             payload = {
-                'chat_id': TELEGRAM_CHAT_ID,
+                'chat_id': target_chat_id,
                 'text': message,
                 'parse_mode': 'HTML'
             }
             response = requests.post(url, json=payload, timeout=10)
-            
+
             if response.status_code == 200:
                 logger.info('Signal sent to Telegram')
                 return True
@@ -385,49 +406,200 @@ class GoldSignalBot:
             logger.error(f'Error sending Telegram signal: {e}')
             return False
     
+    def generate_current_analysis(self):
+        """Run the full analysis pipeline and return (confidence, direction, message)"""
+        data_1h = self.fetch_data(self.symbol, '1h', '30d')
+        data_4h = self.fetch_data(self.symbol, '4h', '90d')
+
+        if data_1h is None or data_4h is None:
+            logger.warning('Insufficient data for analysis')
+            return None, None, None
+
+        analysis_1h = self.analyze_timeframe(data_1h)
+        analysis_4h = self.analyze_timeframe(data_4h)
+
+        if not analysis_1h or not analysis_4h:
+            return None, None, None
+
+        dxy_bias, dxy_direction = self.get_dxy_bias()
+        confidence, direction = self.calculate_confidence(analysis_1h, analysis_4h, dxy_bias)
+
+        atr = analysis_1h['atr'] if analysis_1h['atr'] > 0 else analysis_1h['close'] * 0.001
+        targets = self.calculate_targets_and_stops(analysis_1h['close'], direction, atr)
+        message = self.generate_signal_message(confidence, direction, analysis_1h, analysis_4h, targets)
+
+        return confidence, direction, message
+
     def analyze_xauusd(self):
-        """Main analysis function"""
+        """Main scheduled analysis - only sends when confidence meets the threshold"""
         try:
             logger.info('Starting XAUUSD analysis...')
-            
-            # Fetch data for all timeframes
-            data_15m = self.fetch_data(self.symbol, '15m', '5d')
-            data_1h = self.fetch_data(self.symbol, '1h', '30d')
-            data_4h = self.fetch_data(self.symbol, '4h', '90d')
-            
-            if data_1h is None or data_4h is None:
-                logger.warning('Insufficient data for analysis')
+
+            confidence, direction, message = self.generate_current_analysis()
+
+            if confidence is None:
                 return
-            
-            # Analyze timeframes
-            analysis_15m = self.analyze_timeframe(data_15m)
-            analysis_1h = self.analyze_timeframe(data_1h)
-            analysis_4h = self.analyze_timeframe(data_4h)
-            
-            # Get DXY bias
-            dxy_bias, dxy_direction = self.get_dxy_bias()
-            
-            # Calculate confidence and signal
-            confidence, direction = self.calculate_confidence(analysis_1h, analysis_4h, dxy_bias)
-            
+
             logger.info(f'Signal: {direction}, Confidence: {confidence}%')
-            
-            # If confidence meets threshold, generate and send signal
+
             if confidence >= self.confidence_threshold or direction == 'NEUTRAL':
-                if analysis_1h and analysis_4h:
-                    atr = analysis_1h['atr'] if analysis_1h['atr'] > 0 else analysis_1h['close'] * 0.001
-                    targets = self.calculate_targets_and_stops(analysis_1h['close'], direction, atr)
-                    
-                    message = self.generate_signal_message(confidence, direction, analysis_1h, analysis_4h, targets)
-                    
-                    if message:
-                        logger.info(f'Signal Message:\n{message}')
-                        self.send_telegram_signal(message)
+                if message:
+                    logger.info(f'Signal Message:\n{message}')
+                    self.send_telegram_signal(message)
             else:
                 logger.info(f'Signal below threshold ({confidence}% < {self.confidence_threshold}%)')
-        
+
         except Exception as e:
             logger.error(f'Error in XAUUSD analysis: {e}')
+
+    def handle_signal_request(self, chat_id):
+        """Handle an on-demand /signal request - always replies, regardless of threshold"""
+        confidence, direction, message = self.generate_current_analysis()
+
+        if message is None:
+            self.send_telegram_signal('⚠️ Could not fetch price data right now, please try again in a moment.', chat_id=chat_id)
+            return
+
+        self.send_telegram_signal(message, chat_id=chat_id)
+
+    def download_telegram_file(self, file_id):
+        """Download a file (e.g. a photo) the user sent to the bot"""
+        info_resp = requests.get(
+            f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/getFile',
+            params={'file_id': file_id}, timeout=15
+        )
+        info = info_resp.json()
+        if not info.get('ok'):
+            logger.error(f'getFile error: {info}')
+            return None
+
+        file_path = info['result']['file_path']
+        file_resp = requests.get(
+            f'https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}', timeout=30
+        )
+        return file_resp.content
+
+    def analyze_chart_screenshot(self, image_bytes, media_type='image/jpeg'):
+        """Ask Claude to read a trading chart screenshot and give a directional view"""
+        if not ANTHROPIC_API_KEY:
+            return (
+                "⚠️ Chart image analysis isn't configured yet. Ask whoever runs this bot "
+                "to set an ANTHROPIC_API_KEY."
+            )
+
+        try:
+            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            image_b64 = base64.standard_b64encode(image_bytes).decode('utf-8')
+
+            response = client.messages.create(
+                model=CHART_ANALYSIS_MODEL,
+                max_tokens=1024,
+                messages=[{
+                    'role': 'user',
+                    'content': [
+                        {
+                            'type': 'image',
+                            'source': {'type': 'base64', 'media_type': media_type, 'data': image_b64}
+                        },
+                        {
+                            'type': 'text',
+                            'text': (
+                                'This is a screenshot of a trading chart (likely XAUUSD/Gold). '
+                                'Based only on what is visible in the image (candles, trend lines, '
+                                'indicators, support/resistance levels), give a short technical read: '
+                                '1) overall trend, 2) key support/resistance levels you can see, '
+                                '3) a tentative BUY / SELL / NEUTRAL bias with your reasoning. '
+                                'Keep it under 150 words, use plain text suitable for a Telegram message, '
+                                'and end with a one-line disclaimer that this is not financial advice.'
+                            )
+                        }
+                    ]
+                }]
+            )
+
+            if response.stop_reason == 'refusal':
+                return "⚠️ I couldn't analyze that image (declined by safety filters). Try a clearer chart screenshot."
+
+            text = next((block.text for block in response.content if block.type == 'text'), None)
+            return text or "⚠️ Couldn't read that chart, please try another screenshot."
+        except Exception as e:
+            logger.error(f'Error analyzing chart image: {e}')
+            return '⚠️ Something went wrong analyzing that image, please try again.'
+
+    def handle_chart_photo(self, chat_id, file_id):
+        """Handle a photo the user sent, analyze it, and reply"""
+        self.send_telegram_signal('🔎 Analyzing your chart screenshot...', chat_id=chat_id)
+        image_bytes = self.download_telegram_file(file_id)
+
+        if image_bytes is None:
+            self.send_telegram_signal("⚠️ Couldn't download that image, please try again.", chat_id=chat_id)
+            return
+
+        result = self.analyze_chart_screenshot(image_bytes)
+        self.send_telegram_signal(f'📊 <b>Chart Read</b>\n\n{result}', chat_id=chat_id)
+
+    def handle_update(self, update):
+        """Route a single Telegram update to the right handler"""
+        message = update.get('message')
+        if not message:
+            return
+
+        chat_id = message.get('chat', {}).get('id')
+        if chat_id is None:
+            return
+
+        if 'photo' in message:
+            self.handle_chart_photo(chat_id, message['photo'][-1]['file_id'])
+            return
+
+        text = (message.get('text') or '').strip()
+        if not text:
+            return
+
+        lowered = text.lower()
+        if lowered.startswith('/start') or lowered.startswith('/help'):
+            self.send_telegram_signal(HELP_TEXT, chat_id=chat_id)
+        else:
+            # /signal, /price, or any other free-text message - treat as
+            # "what's the current read" since that's this bot's only job
+            self.handle_signal_request(chat_id)
+
+    def run_telegram_listener(self):
+        """Long-poll Telegram for incoming messages/photos and reply to them"""
+        if not TELEGRAM_TOKEN:
+            logger.warning('Telegram listener not started: TELEGRAM_TOKEN missing')
+            return
+
+        logger.info('Telegram listener started')
+        offset = None
+
+        while True:
+            try:
+                params = {'timeout': 30}
+                if offset is not None:
+                    params['offset'] = offset
+
+                resp = requests.get(
+                    f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates',
+                    params=params, timeout=35
+                )
+                data = resp.json()
+
+                if not data.get('ok'):
+                    logger.error(f'getUpdates error: {data}')
+                    time.sleep(5)
+                    continue
+
+                for update in data.get('result', []):
+                    offset = update['update_id'] + 1
+                    try:
+                        self.handle_update(update)
+                    except Exception as e:
+                        logger.error(f'Error handling update: {e}')
+
+            except Exception as e:
+                logger.error(f'Telegram listener error: {e}')
+                time.sleep(5)
     
     def send_welcome_message(self):
         """Send a one-time welcome message when the bot comes online"""
@@ -446,6 +618,9 @@ class GoldSignalBot:
         logger.info('GoldSignalBot started')
 
         self.send_welcome_message()
+
+        # Listen for incoming Telegram messages/photos in the background
+        threading.Thread(target=self.run_telegram_listener, daemon=True).start()
 
         # Schedule the analysis to run every 30 minutes
         schedule.every(SIGNAL_CHECK_INTERVAL).minutes.do(self.analyze_xauusd)
