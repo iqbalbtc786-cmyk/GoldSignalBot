@@ -359,9 +359,9 @@ assistant = ForexAssistant(ANTHROPIC_API_KEY)
 WELCOME_MESSAGE = """👋 السلام علیکم! میں آپ کا فاریکس ٹریڈنگ اسسٹنٹ ہوں۔
 
 میں یہ کر سکتا ہوں:
-📈 "سگنل دو" لکھیں — XAUUSD/DXY سگنل کے لیے
+📈 /signal یا "سگنل دو" لکھیں — XAUUSD/DXY سگنل کے لیے
 🖼️ چارٹ کی تصویر بھیجیں — میں analyze کر کے بتاؤں گا
-⏰ "1 گھنٹے کا اپڈیٹ" یا "2 گھنٹے کا اپڈیٹ" لکھیں — مارکیٹ اپڈیٹ کے لیے
+⏰ /update، /1h یا /2h — مارکیٹ اپڈیٹ کے لیے
 💬 کوئی بھی سوال پوچھیں، میں اردو میں جواب دوں گا
 
 ⚠️ یاد رکھیں: یہ سگنل صرف رہنمائی کیلئے ہیں، اپنی ذمہ داری پر trade کریں"""
@@ -371,12 +371,31 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(WELCOME_MESSAGE)
 
 
-async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def ask_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt: str):
     chat_id = update.effective_chat.id
-    user_text = update.message.text
     await context.bot.send_chat_action(chat_id=chat_id, action='typing')
-    reply = assistant.chat(chat_id, user_text)
+    reply = assistant.chat(chat_id, prompt)
     await update.message.reply_text(reply)
+
+
+async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await ask_assistant(update, context, 'سگنل دو')
+
+
+async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await ask_assistant(update, context, 'مارکیٹ اپڈیٹ دیں')
+
+
+async def update_1h_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await ask_assistant(update, context, '1 گھنٹے کا اپڈیٹ دیں')
+
+
+async def update_2h_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await ask_assistant(update, context, '2 گھنٹے کا اپڈیٹ دیں')
+
+
+async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await ask_assistant(update, context, update.message.text)
 
 
 async def photo_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -414,6 +433,10 @@ def main():
 
     application.add_handler(CommandHandler('start', start_command))
     application.add_handler(CommandHandler('help', start_command))
+    application.add_handler(CommandHandler('signal', signal_command))
+    application.add_handler(CommandHandler('update', update_command))
+    application.add_handler(CommandHandler('1h', update_1h_command))
+    application.add_handler(CommandHandler('2h', update_2h_command))
     application.add_handler(MessageHandler(filters.PHOTO, photo_message))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message))
 
